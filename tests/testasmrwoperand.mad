@@ -14,7 +14,8 @@ bar (void)
 int
 main (void)
 {
-  asm ("" : "+r" (*bar ()));
+  int *p = bar ();
+  asm ("" : "=r" (*p) : "0" (*p));
   if (count != 1)
     abort ();
   puts("ok\n");

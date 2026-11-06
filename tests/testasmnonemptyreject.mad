@@ -1,0 +1,16 @@
+unsigned long
+mul_high(unsigned long a, unsigned long b)
+{
+    unsigned long high, low;
+    __asm__ volatile ("mulq %3"
+        : "=d" (high), "=a" (low)
+        : "%a" (a), "rm" (b)
+        : "cc");
+    (void)low;
+    return high;
+}
+
+int main(void)
+{
+    return mul_high(1, 48) != 0;
+}

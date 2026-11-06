@@ -13,20 +13,13 @@ static int bump(int *p)
 	calls++;
 	return *p;
 }
-static int *slot(int *p)
-{
-	calls++;
-	return p;
-}
 int main(void)
 {
 	int x = 0, y = 5, o = 0;
-	asm volatile ("" : : "r" (&x) : "memory");
-	asm volatile ("" : : "r" (bump(&x)) : "memory");
+	asm volatile ("" : : "r" (&x));
+	asm volatile ("" : : "r" (bump(&x)));
 	asm __volatile__ ("" :: "r" (bump(&x)), [named] "m" (y));
 	asm ("" : "=r" (o) : "0" (bump(&y)));
-	asm ("" : "+r" (*slot(&y)));
-	asm volatile ("" ::: "memory");
 	printf("asm: %d %d %d %d\n", x, y, o, calls);
 	return 0;
 }

@@ -1,0 +1,6 @@
+int main(void)
+{
+    int value = 0;
+    __asm__ volatile ("" : : "r" (value) : "memory");
+    return value;
+}

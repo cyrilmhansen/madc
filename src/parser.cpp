@@ -2445,18 +2445,22 @@ TokenBase *Program::consume_gnu_asm_label(TokenBase *nt,
 // [: labels]]]] ) ; — an operand is `[name] "constraint" ( expression )`.
 // `tb` is the asm introducer; shared by the ttIdentifier and ttKeyword arms
 // of parseStatement so reserving `asm` as a keyword keeps the statement.
-// c2mir has no inline asm and a template's instructions never run, so the
-// statement lowers to what its OPERANDS make observable: each operand
-// expression evaluated exactly once, in order (outputs, then inputs). Under
-// an EMPTY template a matching constraint ("0", "[name]") is exact as well —
-// the input sits in its output's location — so it lowers to `output = input`.
+// c2mir has no inline asm. Preserve only empty-template forms whose operand
+// effects can be represented in C; reject templates, clobbers, goto labels,
+// and outputs without a tied input instead of silently dropping their effects.
+// Under an EMPTY template a matching constraint ("0", "[name]") is exact as
+// well — the input sits in its output's location — so it lowers to
+// `output = input`.
 TokenBase *Program::skip_gnu_asm_statement(TokenBase *tb)
 {
     // asm-qualifiers, in any order: volatile, inline, goto.
+    bool asm_goto = false;
     for ( TokenBase *q = peekToken(); q; q = peekToken() )
     {
 	bool qualifier = q->id() == TokenID::tkVOLATILE
 		      || q->id() == TokenID::tkGOTO;
+	if ( q->id() == TokenID::tkGOTO )
+	    asm_goto = true;
 	if ( !qualifier && is_contextual_identifier_token(q) )
 	{
 	    madc::dis::istring name = contextual_identifier_name(q);
@@ -2464,6 +2468,8 @@ TokenBase *Program::skip_gnu_asm_statement(TokenBase *tb)
 		     || name == "__volatile" || name == "inline"
 		     || name == "__inline__" || name == "__inline"
 		     || name == "goto";
+	    if ( name == "goto" )
+		asm_goto = true;
 	}
 	if ( !qualifier )
 	    break;
@@ -2481,6 +2487,8 @@ TokenBase *Program::skip_gnu_asm_statement(TokenBase *tb)
     };
     std::vector<AsmOperand> operands[2];	// outputs, inputs
     bool empty_template = true;
+    bool has_clobber = false;
+    bool has_goto_labels = false;
     // 0 template, 1 outputs, 2 inputs, 3 clobbers, 4 goto labels.
     int section = 0;
     for ( ;; )
@@ -2507,12 +2515,15 @@ TokenBase *Program::skip_gnu_asm_statement(TokenBase *tb)
 				   : "Expecting string literal asm clobber") << flush;
 	    if ( section == 0 && !((TokenStr *)t)->spelling_empty() )
 		empty_template = false;
+	    if ( section == 3 )
+		has_clobber = true;
 	    continue;
 	}
 	if ( section == 4 )
 	{
 	    if ( !is_contextual_identifier_token(t) )
 		Throw(t) << "Expecting label name in asm goto" << flush;
+	    has_goto_labels = true;
 	    continue;
 	}
 	AsmOperand op;
@@ -2544,6 +2555,13 @@ TokenBase *Program::skip_gnu_asm_statement(TokenBase *tb)
 	Throw(peekToken() ? peekToken() : tb) << "Expecting ';' after asm statement" << flush;
     TokenBase *semi = nextToken();
 
+    if ( !empty_template )
+	Throw(tb) << "non-empty GNU asm templates are not supported" << flush;
+    if ( has_clobber )
+	Throw(tb) << "GNU asm clobbers are not supported" << flush;
+    if ( asm_goto || has_goto_labels )
+	Throw(tb) << "GNU asm goto is not supported" << flush;
+
     // The output a matching input constraint names: its number ("0") or its
     // `[name]`; -1 when the input names none.
     std::vector<AsmOperand> &outs = operands[0];
@@ -2562,19 +2580,18 @@ TokenBase *Program::skip_gnu_asm_statement(TokenBase *tb)
     };
     std::vector<bool> output_assigned(outs.size(), false);
     std::vector<TokenBase *> effects;
-    if ( empty_template )
-	for ( const AsmOperand &in : operands[1] )
-	{
-	    int o = tied_output(in.constraint);
-	    if ( o >= 0 )
-		output_assigned[o] = true;
-	}
-    for ( size_t o = 0; o < outs.size(); o++ )
-	if ( !output_assigned[o] )
-	    effects.push_back(outs[o].expr);
     for ( const AsmOperand &in : operands[1] )
     {
-	int o = empty_template ? tied_output(in.constraint) : -1;
+	int o = tied_output(in.constraint);
+	if ( o >= 0 )
+	    output_assigned[o] = true;
+    }
+    for ( size_t o = 0; o < outs.size(); o++ )
+	if ( !output_assigned[o] )
+	    Throw(tb) << "GNU asm output operand without an explicit input is not supported" << flush;
+    for ( const AsmOperand &in : operands[1] )
+    {
+	int o = tied_output(in.constraint);
 	if ( o < 0 )
 	{
 	    effects.push_back(in.expr);

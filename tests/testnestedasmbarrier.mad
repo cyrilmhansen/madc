@@ -12,7 +12,7 @@ int foo(void)
     asm volatile("" :: "m" (x));
     asm volatile("" :: "mr" (x));
     asm volatile("" : "=r" (x) : "0" (x));
-    asm volatile("" : "=m" (x) : "m" (x));
+    asm volatile("" : "=m" (x) : "0" (x));
     return x;
 }
 
@@ -27,7 +27,7 @@ int bar(void)
 	asm volatile("" :: "mr" (x));
 	x += 4;
 	asm volatile("" : "=r" (x) : "0" (x));
-	asm volatile("" : "=m" (x) : "m" (x));
+	asm volatile("" : "=m" (x) : "0" (x));
     }
 
     nested();
@@ -47,7 +47,7 @@ int baz(void)
 	    asm volatile("" :: "mr" (x));
 	    x += 4;
 	    asm volatile("" : "=r" (x) : "0" (x));
-	    asm volatile("" : "=m" (x) : "m" (x));
+	    asm volatile("" : "=m" (x) : "0" (x));
 	}
 
 	nested2();
